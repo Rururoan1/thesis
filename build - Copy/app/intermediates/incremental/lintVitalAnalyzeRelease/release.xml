@@ -1,0 +1,35 @@
+<variant
+    name="release"
+    package="com.example.riceproject1"
+    minSdkVersion="24"
+    targetSdkVersion="36.0"
+    shrinking="true"
+    mergedManifest="C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\intermediates\merged_manifest\release\outputReleaseAppLinkSettings\AndroidManifest.xml"
+    proguardFiles="C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\intermediates\default_proguard_files\global\proguard-android-optimize.txt-9.0.1;C:\Users\Public\flutter\flutter_windows_3.44.6-stable\flutter\packages\flutter_tools\gradle\flutter_proguard_rules.pro"
+    partialResultsDir="C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\intermediates\lint_vital_partial_results\release\lintVitalAnalyzeRelease\out"
+    desugaredMethodsFiles="C:\Users\SORIÑO\.gradle\caches\9.1.0\transforms\f077b92602dc19b1de1997b472163ac2\workspace\transformed\D8BackportedDesugaredMethods.txt">
+  <buildFeatures/>
+  <sourceProviders>
+    <sourceProvider
+        manifests="src\main\AndroidManifest.xml"
+        javaDirectories="src\main\java;src\release\java;src\main\kotlin;src\release\kotlin"
+        resDirectories="src\main\res;src\release\res"
+        assetsDirectories="src\main\assets;src\release\assets"/>
+  </sourceProviders>
+  <testSourceProviders>
+  </testSourceProviders>
+  <testFixturesSourceProviders>
+  </testFixturesSourceProviders>
+  <manifestPlaceholders>
+    <placeholder
+        name="applicationName"
+        value="android.app.Application" />
+  </manifestPlaceholders>
+  <artifact
+      classOutputs="C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\intermediates\javac\release\compileReleaseJavaWithJavac\classes;C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\tmp\kotlin-classes\release;C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\kotlinToolingMetadata;C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\intermediates\compile_r_class_jar\release\generateReleaseRFile\R.jar"
+      type="MAIN"
+      applicationId="com.example.riceproject1"
+      generatedSourceFolders="C:\Users\Public\AndroidStudioProjects\riceproject1\build\app\generated\ap_generated_sources\release\out"
+      desugaredMethodsFiles="C:\Users\SORIÑO\.gradle\caches\9.1.0\transforms\f077b92602dc19b1de1997b472163ac2\workspace\transformed\D8BackportedDesugaredMethods.txt">
+  </artifact>
+</variant>
