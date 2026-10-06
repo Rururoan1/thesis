@@ -2,18 +2,23 @@
 // ─────────────────────────────
 // All HTTP communication with the Flask backend lives here.
 // Change [baseUrl] to match your deployment host.
+//
+// Every request automatically carries the signed-in user's mobile number in
+// the `X-User-Id` header, so the backend can store and return each farmer's
+// scans separately. Screens do not need to pass the user themselves.
 
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../../models/analysis_result.dart';
 import '../../models/history_response.dart';
+import 'auth_service.dart';
 
 class ApiService {
 
   /// static const String baseUrl = 'http://10.0.2.2:5000';
   // static const String baseUrl = 'http://10.0.2.2:5000';
-   // Android emulator → localhost
+  // Android emulator → localhost
   // static const String baseUrl = 'http://192.168.1.126:5000';
   // static const String baseUrl = 'https://my-domain.com';   //
   static const String baseUrl = 'https://michaelcomisas88--rice-pest-detector-flask-app.modal.run';
@@ -24,6 +29,15 @@ class ApiService {
   ApiService._internal();
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
+
+  /// Headers sent with every authenticated request.
+  Map<String, String> get _userHeaders {
+    final userId = AuthService.instance.currentUser;
+    if (userId == null) {
+      throw const ApiException('Please sign in first.', statusCode: 401);
+    }
+    return {'X-User-Id': userId};
+  }
 
   Future<bool> checkHealth() async {
     try {
@@ -41,6 +55,7 @@ class ApiService {
   Future<AnalysisResult> analyzeImage(File imageFile) async {
     final uri     = Uri.parse('$baseUrl/api/v1/analyze');
     final request = http.MultipartRequest('POST', uri);
+    request.headers.addAll(_userHeaders);
 
     request.files.add(
       await http.MultipartFile.fromPath('image', imageFile.path),
@@ -66,7 +81,8 @@ class ApiService {
     final uri = Uri.parse(
       '$baseUrl/api/v1/history?page=$page&per_page=$perPage',
     );
-    final response = await http.get(uri).timeout(_timeout);
+    final response =
+    await http.get(uri, headers: _userHeaders).timeout(_timeout);
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -79,7 +95,8 @@ class ApiService {
 
   Future<AnalysisResult> getAnalysisById(int id) async {
     final uri      = Uri.parse('$baseUrl/api/v1/history/$id');
-    final response = await http.get(uri).timeout(_timeout);
+    final response =
+    await http.get(uri, headers: _userHeaders).timeout(_timeout);
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -92,7 +109,8 @@ class ApiService {
 
   Future<Map<String, dynamic>> getStats() async {
     final uri      = Uri.parse('$baseUrl/api/v1/stats');
-    final response = await http.get(uri).timeout(_timeout);
+    final response =
+    await http.get(uri, headers: _userHeaders).timeout(_timeout);
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body) as Map<String, dynamic>;

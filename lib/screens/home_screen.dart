@@ -8,13 +8,69 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../models/analysis_result.dart';
 import '../utils/app_theme.dart';
 import '../widgets/result_card.dart';
 import '../widgets/severity_badge.dart';
-import '../widgets/scanning_overlay.dart';
 import 'offline_queue_screen.dart';
 
+
+/// One corner bracket of the scanning viewfinder reticle.
+class _ScanCorner extends StatelessWidget {
+  final Alignment alignment;
+  const _ScanCorner({required this.alignment});
+
+  @override
+  Widget build(BuildContext context) {
+    final isTop   = alignment == Alignment.topLeft || alignment == Alignment.topRight;
+    final isLeft  = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft;
+    const double size = 18;
+    const double thickness = 2.5;
+    const color = Colors.white;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          Positioned(
+            top:    isTop ? 0 : null,
+            bottom: isTop ? null : 0,
+            left:   isLeft ? 0 : null,
+            right:  isLeft ? null : 0,
+            child: Container(width: size, height: thickness, color: color),
+          ),
+          Positioned(
+            top:    isTop ? 0 : null,
+            bottom: isTop ? null : 0,
+            left:   isLeft ? 0 : null,
+            right:  isLeft ? null : 0,
+            child: Container(width: thickness, height: size, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Faint horizontal grid lines drawn behind the scan line for a
+/// "scanner"/sci-fi feel.
+class _ScanGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..strokeWidth = 1;
+    const gap = 20.0;
+    for (double y = gap; y < size.height; y += gap) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -35,6 +91,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double>   _pulseAnimation;
 
+  late AnimationController _scanController;
+  late Animation<double>   _scanAnimation;
+
   @override
   void initState() {
     super.initState();
@@ -45,11 +104,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    _scanController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
+    _scanAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _scanController, curve: Curves.easeInOut),
+    );
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _scanController.dispose();
     super.dispose();
   }
 
@@ -93,15 +161,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
 
+  // Each signed-in user has their own offline queue.
   Future<void> _saveToOfflineQueue() async {
     if (_pickedFile == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      List<String> queue = prefs.getStringList('offline_pests_queue') ?? [];
+      final queueKey = AuthService.instance.scopedKey('offline_pests_queue');
+      List<String> queue = prefs.getStringList(queueKey) ?? [];
 
       if (!queue.contains(_pickedFile!.path)) {
         queue.add(_pickedFile!.path);
-        await prefs.setStringList('offline_pests_queue', queue);
+        await prefs.setStringList(queueKey, queue);
       }
 
       if (mounted) {
@@ -219,6 +289,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               tooltip: 'Reset Tracker',
               onPressed: _reset,
             ),
+          IconButton(
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: 'Sign out (${AuthService.instance.displayName ?? ''})',
+            onPressed: _confirmLogout,
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -226,6 +301,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // ── Greeting ───────────────────────────────────────────────────
+            if (AuthService.instance.displayName != null) ...[
+              Text(
+                'Hello, ${AuthService.instance.displayName}',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // ── Image preview ──────────────────────────────────────────────
             _buildImageSection(),
             const SizedBox(height: 20),
@@ -262,15 +350,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 12),
 
-                  OutlinedButton.icon(
-                    onPressed: _pickImageFromGallery,
-                    icon: const Icon(Icons.photo_library_rounded, color: AppTheme.primary),
-                    label: const Text('Add Image from Gallery', style: TextStyle(color: AppTheme.primary)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      side: const BorderSide(color: AppTheme.primary, width: 1.5),
-                    ),
+                  _sourceButton(
+                    icon:    Icons.photo_library_rounded,
+                    label:   'Upload from Gallery',
+                    onTap:   _pickImageFromGallery,
+                    primary: false,
                   ),
+                  const SizedBox(height: 20),
+                  _buildTipsCard(),
                 ],
               ),
             ],
@@ -285,11 +372,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ],
 
-            // ── Loading caption ────────────────────────────────────────────
-            // The scan animation itself now lives on top of the image in
-            // _buildImageSection(); this just adds a short status caption.
+            // ── Loading indicator ──────────────────────────────────────────
+            // The scanning-line animation over the photo itself now carries
+            // the primary "in progress" feedback, so this is just a short
+            // status line underneath.
             if (_loading) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               const Center(
                 child: Text('Running model inference…',
                     style: TextStyle(color: AppTheme.textSecondary)),
@@ -314,6 +402,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  /// Ask before signing out so it isn't tapped by accident.
+  Future<void> _confirmLogout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+            'Your scans stay saved. Sign in again with your mobile number and PIN to see them.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign out', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await AuthService.instance.logout();
+    }
+  }
+
+  static const double _imageHeight = 280;
+
   Widget _buildImageSection() {
     if (_pickedFile == null) {
       return _emptyImagePlaceholder();
@@ -327,28 +443,110 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ? Image.network(
             _pickedFile!.path,
             width: double.infinity,
-            height: 280,
+            height: _imageHeight,
             fit: BoxFit.cover,
           )
               : Image.file(
             File(_pickedFile!.path),
             width: double.infinity,
-            height: 280,
+            height: _imageHeight,
             fit: BoxFit.cover,
           ),
-
-          // ── Scanning animation while analysis is running ────────────────
-          if (_loading)
-            const Positioned.fill(
-              child: ScanningOverlay(),
-            ),
-
+          if (_loading) _buildScanOverlay(),
           if (_result != null)
             Container(
               color: Colors.black54,
               padding: const EdgeInsets.all(8),
               child: SeverityBadge(severity: _result!.severity),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Sci-fi style scanning effect: a glowing line sweeps up and down over
+  /// the captured photo while the backend is analyzing it.
+  Widget _buildScanOverlay() {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // Subtle dark scrim so the glowing line reads clearly against
+          // any photo.
+          Container(color: Colors.black.withOpacity(0.25)),
+
+          // Faint horizontal grid lines for a "scanner" feel.
+          Positioned.fill(
+            child: CustomPaint(painter: _ScanGridPainter()),
+          ),
+
+          // The moving scan line itself.
+          AnimatedBuilder(
+            animation: _scanAnimation,
+            builder: (_, __) {
+              final top = _scanAnimation.value * (_imageHeight - 3);
+              return Positioned(
+                top: top,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 3,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.primaryLight.withOpacity(0),
+                        AppTheme.primaryLight,
+                        AppTheme.primaryLight.withOpacity(0),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryLight.withOpacity(0.9),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // Scanning corner brackets, like a viewfinder reticle.
+          const Positioned(top: 10, left: 10, child: _ScanCorner(alignment: Alignment.topLeft)),
+          const Positioned(top: 10, right: 10, child: _ScanCorner(alignment: Alignment.topRight)),
+          const Positioned(bottom: 10, left: 10, child: _ScanCorner(alignment: Alignment.bottomLeft)),
+          const Positioned(bottom: 10, right: 10, child: _ScanCorner(alignment: Alignment.bottomRight)),
+
+          // Status pill.
+          Positioned(
+            bottom: 12,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Scanning for pests…',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -362,7 +560,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: child,
       ),
       child: Container(
-        height: 240,
+        height: 320,
         decoration: BoxDecoration(
           color: AppTheme.primaryLight.withOpacity(0.06),
           borderRadius: BorderRadius.circular(16),
@@ -373,7 +571,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           children: [
             Image.asset(
               'assets/images/app_logo_full.png',
-              height: 140,
+              height: 190,
             ),
             const SizedBox(height: 12),
             const Text('Camera Viewfinder Ready',
@@ -387,19 +585,83 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildTipsCard() {
+    const tips = [
+      'Get close to a single leaf — fill most of the frame',
+      'Shoot in daylight, avoid heavy shadows or glare',
+      'Hold the camera steady to avoid blur',
+    ];
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryLight.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primaryLight.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.tips_and_updates_rounded, color: AppTheme.primary, size: 18),
+              SizedBox(width: 6),
+              Text('Tips for best results',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textPrimary, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...tips.map(
+                (tip) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(Icons.check_circle, color: AppTheme.primary, size: 14),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(tip,
+                        style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.3)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sourceButton({
     required IconData icon,
     required String   label,
     required VoidCallback onTap,
     bool primary = false,
   }) {
-    return ElevatedButton.icon(
+    if (primary) {
+      return ElevatedButton.icon(
+        onPressed: onTap,
+        icon:  Icon(icon),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          elevation: 2,
+        ),
+      );
+    }
+    // Secondary action — visually lighter so it doesn't compete with the
+    // primary capture button, but still clearly tappable.
+    return OutlinedButton.icon(
       onPressed: onTap,
-      icon:  Icon(icon),
-      label: Text(label),
-      style: ElevatedButton.styleFrom(
+      icon:  Icon(icon, color: AppTheme.primary),
+      label: Text(label, style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)),
+      style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        elevation: 2,
+        side: const BorderSide(color: AppTheme.primary, width: 1.5),
       ),
     );
   }

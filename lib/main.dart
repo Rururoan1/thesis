@@ -4,17 +4,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'utils/app_theme.dart';
+import 'services/auth_service.dart';
+import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/library_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/stats_screen.dart';
-import 'screens/library_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  // Restore the last signed-in user (if any) before the first frame.
+  await AuthService.instance.restoreSession();
+
   runApp(const RicePestApp());
 }
 
@@ -27,7 +33,28 @@ class RicePestApp extends StatelessWidget {
       title: 'Rice Pest Detector',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: const MainNavigation(),
+      home: const AuthGate(),
+    );
+  }
+}
+
+// ── Login gate ─────────────────────────────────────────────────────────────────
+// Shows LoginScreen until a user is signed in, then the main app.
+// Logging out brings the user back here automatically.
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: AuthService.instance.userNotifier,
+      builder: (_, user, __) {
+        if (user == null) return const LoginScreen();
+        // ValueKey(user) rebuilds Detect / History / Stats from scratch when a
+        // different user signs in, so no data from the previous user is shown.
+        return MainNavigation(key: ValueKey(user));
+      },
     );
   }
 }
@@ -44,11 +71,12 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
 
+  // Order here must match the order of `destinations` below.
   final List<Widget> _screens = const [
     HomeScreen(),
+    LibraryScreen(),
     HistoryScreen(),
     StatsScreen(),
-    LibraryScreen(),
   ];
 
   @override
@@ -67,6 +95,11 @@ class _MainNavigationState extends State<MainNavigation> {
             label: 'Detect',
           ),
           NavigationDestination(
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book, color: AppTheme.primary),
+            label: 'Library',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history, color: AppTheme.primary),
             label: 'History',
@@ -75,11 +108,6 @@ class _MainNavigationState extends State<MainNavigation> {
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart, color: AppTheme.primary),
             label: 'Stats',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.menu_book_outlined),
-            selectedIcon: Icon(Icons.menu_book, color: AppTheme.primary),
-            label: 'Library',
           ),
         ],
       ),
