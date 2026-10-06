@@ -47,10 +47,14 @@ app.*.map.json
 .env
 
 
+
 # Generated / local configuration
 .metadata
 android/local.properties
 
 # My Local / Private Files
+lib/services/auth_service.dart
+lib/services/api_service.dart
+
 # Widget Preview related
 .widget_preview/
